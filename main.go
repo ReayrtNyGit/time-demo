@@ -27,7 +27,8 @@ var (
 func fetchAndSummarizeNews() (string, error) {
 	// Warning: This command relies on external tools (curl, strip-tags, ttok, llm) being installed.
 	// It can also be slow and potentially expensive to run frequently.
-	cmdStr := "curl -s https://www.ft.com/ | strip-tags .n-layout | ttok -t 4000 | llm -m 4o --system 'Create a concise summary that highlights the main points and crucial details of the provided news text. Eliminate unnecessary language and focus on the most important information use Headings followed by a short paragraph of concise text.'"
+	// Updated prompt to request multiple headlines/summaries.
+	cmdStr := "curl -s https://www.ft.com/ | strip-tags .n-layout | ttok -t 4000 | llm -m 4o --system 'Extract the top 3-5 news headlines and provide a brief one-sentence summary for each from the provided text. Format each item clearly using Markdown headings (e.g., ### Headline) followed by the summary paragraph.'"
 	cmd := exec.Command("bash", "-c", cmdStr)
 
 	var out bytes.Buffer
