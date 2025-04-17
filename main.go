@@ -92,21 +92,64 @@ func timeHandler(w http.ResponseWriter, r *http.Request) {
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Current Time</title>
+    <title>Current Time & News</title>
     <meta http-equiv="refresh" content="1">
     <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
+            line-height: 1.6;
+            margin: 0;
+            padding: 20px;
+            background-color: #f4f7f6;
+            color: #333;
+        }
+        .container {
+            max-width: 800px;
+            margin: 20px auto;
+            padding: 30px;
+            background-color: #ffffff;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+        h1 {
+            color: #2c3e50;
+            font-size: 1.8em;
+            margin-bottom: 0.5em;
+        }
+        h2 {
+            color: #34495e;
+            font-size: 1.4em;
+            margin-top: 1.5em;
+            margin-bottom: 0.7em;
+            border-bottom: 1px solid #ecf0f1;
+            padding-bottom: 0.3em;
+        }
+        hr {
+            border: 0;
+            height: 1px;
+            background-color: #bdc3c7;
+            margin: 2em 0;
+        }
         pre {
             white-space: pre-wrap;       /* CSS 3 */
             word-wrap: break-word;       /* Internet Explorer 5.5+ */
             overflow-wrap: break-word;   /* Modern browsers */
+            background-color: #ecf0f1;
+            padding: 15px;
+            border-radius: 4px;
+            font-family: "Courier New", Courier, monospace;
+            font-size: 0.95em;
+            color: #2c3e50;
         }
     </style>
 </head>
 <body>
-    <h1>The current time is: %s</h1>
-    <hr>
-    <h2>FT News Summary:</h2>
-    <pre>%s</pre>
+    <div class="container">
+        <h1>The current time is: %s</h1>
+        <hr>
+        <h2>FT News Summary:</h2>
+        <pre>%s</pre>
+    </div>
 </body>
 </html>
 `, currentTime, summary)
