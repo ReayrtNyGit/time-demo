@@ -29,7 +29,7 @@ var rssFeeds = []struct {
 }{
 	{"BBC News", "http://feeds.bbci.co.uk/news/world/rss.xml"},
 	{"NY Times", "https://rss.nytimes.com/services/xml/rss/nyt/HomePage.xml"},
-	{"Reuters", "http://feeds.reuters.com/reuters/topNews"},
+	{"Reuters", "https://ir.thomsonreuters.com/rss/news-releases.xml?items=15"}, // Updated URL
 	{"TechCrunch", "http://feeds.feedburner.com/TechCrunch/"},
 	{"The Guardian", "https://www.theguardian.com/world/rss"},
 	{"NPR News", "https://feeds.npr.org/1001/rss.xml"},
