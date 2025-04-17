@@ -7,10 +7,24 @@ import (
 	"time"
 )
 
-// timeHandler writes the current time to the HTTP response.
+// timeHandler writes an HTML page with the current time and a meta refresh tag.
 func timeHandler(w http.ResponseWriter, r *http.Request) {
 	currentTime := time.Now().Format(time.RFC1123)
-	fmt.Fprintf(w, "The current time is: %s", currentTime)
+	// Set the content type to HTML
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	// Write the HTML response
+	fmt.Fprintf(w, `
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Current Time</title>
+    <meta http-equiv="refresh" content="1">
+</head>
+<body>
+    <h1>The current time is: %s</h1>
+</body>
+</html>
+`, currentTime)
 }
 
 func main() {
