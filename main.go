@@ -94,6 +94,13 @@ func timeHandler(w http.ResponseWriter, r *http.Request) {
 <head>
     <title>Current Time</title>
     <meta http-equiv="refresh" content="1">
+    <style>
+        pre {
+            white-space: pre-wrap;       /* CSS 3 */
+            word-wrap: break-word;       /* Internet Explorer 5.5+ */
+            overflow-wrap: break-word;   /* Modern browsers */
+        }
+    </style>
 </head>
 <body>
     <h1>The current time is: %s</h1>
