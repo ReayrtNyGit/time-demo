@@ -1,17 +1,17 @@
 package main
 
 import (
-	"bytes"
 	"fmt"
 	"log"
 	"net/http"
-	"os/exec"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/gomarkdown/markdown"
 	mdhtml "github.com/gomarkdown/markdown/html"
 	"github.com/gomarkdown/markdown/parser"
+	"github.com/mmcdole/gofeed"
 )
 
 // Global variables for caching the news summary
@@ -22,26 +22,92 @@ var (
 	summaryFetchError    error        // Store potential error during fetch
 )
 
-// fetchAndSummarizeNews executes the shell pipeline to fetch and summarize news.
-// This function actually performs the fetch operation.
+// Define the RSS feeds to fetch
+var rssFeeds = []struct {
+	Name string
+	URL  string
+}{
+	{"BBC News", "http://feeds.bbci.co.uk/news/world/rss.xml"},
+	{"NY Times", "https://rss.nytimes.com/services/xml/rss/nyt/HomePage.xml"},
+	{"Reuters", "http://feeds.reuters.com/reuters/topNews"},
+	{"TechCrunch", "http://feeds.feedburner.com/TechCrunch/"},
+	{"The Guardian", "https://www.theguardian.com/world/rss"},
+	{"NPR News", "https://feeds.npr.org/1001/rss.xml"},
+	{"Al Jazeera", "http://www.aljazeera.com/xml/rss/all.xml"},
+}
+
+const maxItemsPerFeed = 3 // Number of items to display per feed
+
+// fetchAndSummarizeNews fetches news from multiple RSS feeds concurrently.
 func fetchAndSummarizeNews() (string, error) {
-	// Warning: This command relies on external tools (curl, strip-tags, ttok, llm) being installed.
-	// It can also be slow and potentially expensive to run frequently.
-	// Updated prompt to request multiple headlines/summaries.
-	cmdStr := "curl -s https://www.ft.com/ | strip-tags .n-layout | ttok -t 4000 | llm -m 4o --system 'Extract the top 3-5 news headlines and provide a brief one-sentence summary for each from the provided text. Format each item clearly using Markdown headings (e.g., ### Headline) followed by the summary paragraph.'"
-	cmd := exec.Command("bash", "-c", cmdStr)
+	fp := gofeed.NewParser()
+	var wg sync.WaitGroup
+	var resultsMutex sync.Mutex
+	results := make(map[string]string) // Store results keyed by feed name
+	fetchErrors := []string{}          // Collect errors
 
-	var out bytes.Buffer
-	var stderr bytes.Buffer
-	cmd.Stdout = &out
-	cmd.Stderr = &stderr
+	log.Printf("Fetching %d RSS feeds...", len(rssFeeds))
 
-	err := cmd.Run()
-	if err != nil {
-		// Combine stderr with the error message for better debugging
-		return "", fmt.Errorf("command execution failed: %w\nStderr: %s", err, stderr.String())
+	for _, feedSource := range rssFeeds {
+		wg.Add(1)
+		go func(name, url string) {
+			defer wg.Done()
+			feed, err := fp.ParseURL(url)
+			if err != nil {
+				log.Printf("Error fetching feed %s (%s): %v", name, url, err)
+				resultsMutex.Lock()
+				fetchErrors = append(fetchErrors, fmt.Sprintf("Failed to fetch %s: %v", name, err))
+				resultsMutex.Unlock()
+				return
+			}
+
+			var feedContent strings.Builder
+			feedContent.WriteString(fmt.Sprintf("## %s\n\n", feed.Title)) // Use feed title from RSS
+
+			count := 0
+			for _, item := range feed.Items {
+				if count >= maxItemsPerFeed {
+					break
+				}
+				// Basic formatting: Title as link (if available)
+				feedContent.WriteString(fmt.Sprintf("*   [%s](%s)\n", item.Title, item.Link))
+				// Optionally add description:
+				// feedContent.WriteString(fmt.Sprintf("    *Description:* %s\n", item.Description)) // Be mindful of HTML in descriptions
+				count++
+			}
+			feedContent.WriteString("\n") // Add space after each feed section
+
+			resultsMutex.Lock()
+			results[name] = feedContent.String() // Store by original name for consistent ordering if needed
+			resultsMutex.Unlock()
+		}(feedSource.Name, feedSource.URL)
 	}
-	return out.String(), nil
+
+	wg.Wait()
+	log.Println("Finished fetching RSS feeds.")
+
+	// Combine results - iterate through original list to maintain order
+	var finalSummary strings.Builder
+	for _, feedSource := range rssFeeds {
+		if content, ok := results[feedSource.Name]; ok {
+			finalSummary.WriteString(content)
+		}
+	}
+
+	// Report any errors at the end
+	if len(fetchErrors) > 0 {
+		finalSummary.WriteString("\n---\n**Errors during fetch:**\n")
+		for _, errMsg := range fetchErrors {
+			finalSummary.WriteString(fmt.Sprintf("*   %s\n", errMsg))
+		}
+	}
+
+	if finalSummary.Len() == 0 && len(fetchErrors) > 0 {
+		// If all feeds failed
+		return "", fmt.Errorf("failed to fetch any RSS feeds")
+	}
+
+	return finalSummary.String(), nil // Return combined summary, error is handled within the summary string or if all fail
 }
 
 // getLatestNewsSummary returns the cached summary if it's recent,
