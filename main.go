@@ -190,8 +190,10 @@ func timeHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Set the content type to HTML
+	// Set headers
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	// Allow browser caching for 1 second to reduce rapid refresh load
+	w.Header().Set("Cache-Control", "max-age=1")
 
 	// Write the HTML response
 	fmt.Fprintf(w, `
@@ -199,7 +201,7 @@ func timeHandler(w http.ResponseWriter, r *http.Request) {
 <html>
 <head>
     <title>Current Time & News</title>
-    <meta http-equiv="refresh" content="1">
+    <!-- Removed meta refresh -->
     <style>
         body {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
