@@ -11,15 +11,27 @@ import (
 	"github.com/gomarkdown/markdown"
 	mdhtml "github.com/gomarkdown/markdown/html"
 	"github.com/gomarkdown/markdown/parser"
+	"github.com/gomarkdown/markdown"
+	mdhtml "github.com/gomarkdown/markdown/html"
+	"github.com/gomarkdown/markdown/parser"
 	"github.com/mmcdole/gofeed"
+)
+
+// Constants
+const (
+	maxItemsPerFeed = 3               // Number of items to display per feed
+	cacheTTL        = 1 * time.Hour   // How long to cache the summary
+	fetchTimeout    = 10 * time.Second // Timeout for fetching each feed
+	serverPort      = ":8080"         // Port for the HTTP server
 )
 
 // Global variables for caching the news summary
 var (
-	cachedSummary        string
+	cachedSummaryMD       string       // Cached summary in Markdown format
+	cachedSummaryHTML     string       // Cached summary pre-rendered to HTML
 	lastSummaryUpdateTime time.Time
-	summaryMutex         sync.RWMutex // Read-write mutex for safe concurrent access
-	summaryFetchError    error        // Store potential error during fetch
+	summaryMutex          sync.RWMutex // Read-write mutex for safe concurrent access
+	summaryFetchError     error        // Store potential error during fetch
 )
 
 // Define the RSS feeds to fetch
@@ -34,11 +46,14 @@ var rssFeeds = []struct {
 	{"Al Jazeera", "http://www.aljazeera.com/xml/rss/all.xml"},
 }
 
-const maxItemsPerFeed = 3 // Number of items to display per feed
-
-// fetchAndSummarizeNews fetches news from multiple RSS feeds concurrently.
+// fetchAndSummarizeNews fetches news from multiple RSS feeds concurrently
+// and returns the combined summary in Markdown format.
 func fetchAndSummarizeNews() (string, error) {
+	// Configure HTTP client with timeout
+	httpClient := &http.Client{Timeout: fetchTimeout}
 	fp := gofeed.NewParser()
+	fp.Client = httpClient // Assign the client to the parser
+
 	var wg sync.WaitGroup
 	var resultsMutex sync.Mutex
 	results := make(map[string]string) // Store results keyed by feed name
@@ -50,11 +65,12 @@ func fetchAndSummarizeNews() (string, error) {
 		wg.Add(1)
 		go func(name, url string) {
 			defer wg.Done()
+			// Use context-aware parsing if needed, for now ParseURL with timeout client is sufficient
 			feed, err := fp.ParseURL(url)
 			if err != nil {
-				log.Printf("Error fetching feed %s (%s): %v", name, url, err)
+				log.Printf("Error fetching feed %s (%s): %v", name, url, err) // Use %v for errors
 				resultsMutex.Lock()
-				fetchErrors = append(fetchErrors, fmt.Sprintf("Failed to fetch %s: %v", name, err))
+				fetchErrors = append(fetchErrors, fmt.Sprintf("Failed to fetch %s: %v", name, err)) // Use %v
 				resultsMutex.Unlock()
 				return
 			}
@@ -108,26 +124,40 @@ func fetchAndSummarizeNews() (string, error) {
 	return finalSummary.String(), nil // Return combined summary, error is handled within the summary string or if all fail
 }
 
-// getLatestNewsSummary returns the cached summary if it's recent,
+// getLatestNewsSummary returns the cached summary (Markdown and HTML) if it's recent,
 // otherwise triggers a new fetch.
-func getLatestNewsSummary() (string, error) {
+func getLatestNewsSummary() (string, string, error) {
 	summaryMutex.RLock() // Acquire read lock to check time
-	needsUpdate := time.Since(lastSummaryUpdateTime) > time.Hour || cachedSummary == ""
+	// Use >= cacheTTL for comparison
+	needsUpdate := time.Since(lastSummaryUpdateTime) >= cacheTTL || cachedSummaryMD == ""
 	summaryMutex.RUnlock() // Release read lock
 
 	if needsUpdate {
 		summaryMutex.Lock() // Acquire write lock for potential update
 		// Double-check if another goroutine updated it while waiting for the lock
-		if time.Since(lastSummaryUpdateTime) > time.Hour || cachedSummary == "" {
+		if time.Since(lastSummaryUpdateTime) >= cacheTTL || cachedSummaryMD == "" {
 			log.Println("News summary cache expired or empty. Fetching new summary...")
-			summary, err := fetchAndSummarizeNews()
+			summaryMD, err := fetchAndSummarizeNews()
 			if err != nil {
 				log.Printf("Error fetching news summary: %v", err)
 				// Keep the stale cache but store the error
 				summaryFetchError = err
-				// Optionally, clear the cache on error: cachedSummary = ""
+				// Optionally, clear the cache on error:
+				// cachedSummaryMD = ""
+				// cachedSummaryHTML = ""
 			} else {
-				cachedSummary = summary
+				// Convert Markdown to HTML here, only on successful fetch
+				extensions := parser.CommonExtensions | parser.AutoHeadingIDs
+				p := parser.NewWithExtensions(extensions)
+				doc := p.Parse([]byte(summaryMD))
+				htmlFlags := mdhtml.CommonFlags | mdhtml.HrefTargetBlank
+				opts := mdhtml.RendererOptions{Flags: htmlFlags}
+				renderer := mdhtml.NewRenderer(opts)
+				summaryHTML := string(markdown.Render(doc, renderer))
+
+				// Update cache
+				cachedSummaryMD = summaryMD
+				cachedSummaryHTML = summaryHTML
 				summaryFetchError = nil // Clear previous error on success
 			}
 			lastSummaryUpdateTime = time.Now() // Update time even if fetch failed to prevent constant retries
@@ -138,12 +168,13 @@ func getLatestNewsSummary() (string, error) {
 	// Return the current cache content and any stored error
 	summaryMutex.RLock()
 	defer summaryMutex.RUnlock()
-	// If there was an error during the last fetch attempt, report it along with potentially stale data
+	// If there was an error during the last fetch attempt, return it along with potentially stale data
 	if summaryFetchError != nil {
-		errorMsg := fmt.Sprintf("Error during last summary fetch attempt: %v\n(Showing potentially stale data below)\n\n%s", summaryFetchError, cachedSummary)
-		return errorMsg, summaryFetchError // Return error state
+		// Return stale data but also the error
+		return cachedSummaryMD, cachedSummaryHTML, summaryFetchError
 	}
-	return cachedSummary, nil
+	// Return fresh (or acceptably old) data
+	return cachedSummaryMD, cachedSummaryHTML, nil
 }
 
 // timeHandler writes an HTML page with the current time, news summary, and a meta refresh tag.
@@ -151,19 +182,16 @@ func timeHandler(w http.ResponseWriter, r *http.Request) {
 	currentTime := time.Now().Format(time.RFC1123)
 
 	// Get the latest news summary (from cache or fetch)
-	rawSummary, _ := getLatestNewsSummary() // Ignore error for display, error is part of the summary string if needed
-
-	// Convert summary Markdown to HTML
-	extensions := parser.CommonExtensions | parser.AutoHeadingIDs
-	p := parser.NewWithExtensions(extensions)
-	doc := p.Parse([]byte(rawSummary))
-
-	// create HTML renderer with extensions
-	htmlFlags := mdhtml.CommonFlags | mdhtml.HrefTargetBlank
-	opts := mdhtml.RendererOptions{Flags: htmlFlags}
-	renderer := mdhtml.NewRenderer(opts)
-
-	summaryHTML := string(markdown.Render(doc, renderer)) // Use the Render function
+	_, summaryHTML, err := getLatestNewsSummary() // We only need HTML for display
+	if err != nil {
+		// Log the error that occurred during the fetch/cache retrieval
+		log.Printf("Handler warning: serving potentially stale news summary due to error: %v", err)
+		// We still proceed to show potentially stale content, but the error is logged.
+		// If summaryHTML is empty (e.g., first run failed), we might want to display an error message.
+		if summaryHTML == "" {
+			summaryHTML = "<p><em>Could not retrieve news summary. Please try again later.</em></p>"
+		}
+	}
 
 	// Set the content type to HTML
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -241,12 +269,12 @@ func timeHandler(w http.ResponseWriter, r *http.Request) {
     <div class="container">
         <h1>The current time is: %s</h1>
         <hr>
-        <h2>FT News Summary:</h2>
-        <div>%s</div> <!-- Use a div instead of pre -->
+        <h2>News Summary:</h2> <!-- Changed heading -->
+        <div>%s</div> <!-- Use a div for the pre-rendered HTML -->
     </div>
 </body>
 </html>
-`, currentTime, summaryHTML) // Use the converted HTML summary
+`, currentTime, summaryHTML) // Use the pre-rendered HTML summary
 }
 
 func main() {
@@ -258,13 +286,12 @@ func main() {
 	// Register the timeHandler function for the root path.
 	http.HandleFunc("/", timeHandler)
 
-	// Define the port the server will listen on.
-	port := ":8080"
-	log.Printf("Server starting on port %s\n", port)
+	// Use the constant for the port
+	log.Printf("Server starting on port %s\n", serverPort)
 
 	// Start the HTTP server.
 	// http.ListenAndServe always returns a non-nil error.
-	if err := http.ListenAndServe(port, nil); err != nil {
-		log.Fatalf("Could not start server: %s\n", err)
+	if err := http.ListenAndServe(serverPort, nil); err != nil {
+		log.Fatalf("Could not start server: %v\n", err) // Use %v for errors
 	}
 }
