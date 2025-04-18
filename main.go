@@ -174,9 +174,11 @@ func getLatestNewsSummary() (string, string, error) {
 	return cachedSummaryMD, cachedSummaryHTML, nil
 }
 
-// timeHandler writes an HTML page with the current time, news summary, and a meta refresh tag.
+// timeHandler writes an HTML page with the current time, news summary.
 func timeHandler(w http.ResponseWriter, r *http.Request) {
-	currentTime := time.Now().Format(time.RFC1123)
+	// Format the time as "Friday 18 April at 15:41"
+	// Go's reference time: Mon Jan 2 15:04:05 MST 2006
+	currentTime := time.Now().Format("Monday 02 January at 15:04")
 
 	// Get the latest news summary (from cache or fetch)
 	_, summaryHTML, err := getLatestNewsSummary() // We only need HTML for display
@@ -266,9 +268,9 @@ func timeHandler(w http.ResponseWriter, r *http.Request) {
 </head>
 <body>
     <div class="container">
-        <h1>The current time is: %s</h1>
+        <h1>The News on %s</h1> <!-- Updated heading text -->
         <hr>
-        <h2>News Summary:</h2> <!-- Changed heading -->
+        <h2>News Summary:</h2>
         <div>%s</div> <!-- Use a div for the pre-rendered HTML -->
     </div>
 </body>
