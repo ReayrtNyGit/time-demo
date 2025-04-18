@@ -11,9 +11,6 @@ import (
 	"github.com/gomarkdown/markdown"
 	mdhtml "github.com/gomarkdown/markdown/html"
 	"github.com/gomarkdown/markdown/parser"
-	"github.com/gomarkdown/markdown"
-	mdhtml "github.com/gomarkdown/markdown/html"
-	"github.com/gomarkdown/markdown/parser"
 	"github.com/mmcdole/gofeed"
 )
 
